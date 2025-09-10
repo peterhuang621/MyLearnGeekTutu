@@ -1,6 +1,7 @@
 package geerpc
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -101,7 +102,7 @@ func (client *Client) receive() {
 		case call == nil:
 			err = client.cc.ReadBody(nil)
 		case h.Error != "":
-			call.Error = fmt.Errorf(h.Error)
+			call.Error = fmt.Errorf("%s", h.Error)
 			err = client.cc.ReadBody(nil)
 			call.done()
 		default:
@@ -156,23 +157,6 @@ func parseOptions(opts ...*Option) (*Option, error) {
 	return opt, nil
 }
 
-func Dial(network, address string, opts ...*Option) (client *Client, err error) {
-	opt, err := parseOptions(opts...)
-	if err != nil {
-		return nil, err
-	}
-	conn, err := net.Dial(network, address)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if client == nil {
-			_ = conn.Close()
-		}
-	}()
-	return NewClient(conn, opt)
-}
-
 func (client *Client) send(call *Call) {
 	client.sending.Lock()
 	defer client.sending.Unlock()
@@ -213,9 +197,15 @@ func (client *Client) Go(ServiceMethod string, args, reply any, done chan *Call)
 	return call
 }
 
-func (client *Client) Call(ServiceMethod string, args, reply any) error {
-	call := <-client.Go(ServiceMethod, args, reply, make(chan *Call, 1)).Done
-	return call.Error
+func (client *Client) Call(ctx context.Context, serviceMethod string, args, reply any) error {
+	call := client.Go(serviceMethod, args, reply, make(chan *Call, 1))
+	select {
+	case <-ctx.Done():
+		client.removeCall(call.Seq)
+		return errors.New("rpc client: call failed: " + ctx.Err().Error())
+	case call := <-call.Done:
+		return call.Error
+	}
 }
 
 type clientResult struct {
