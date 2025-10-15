@@ -2,8 +2,6 @@ package xclient
 
 import (
 	"errors"
-	. "geerpc"
-	"io"
 	"math"
 	"math/rand"
 	"sync"
@@ -17,7 +15,7 @@ const (
 	RoundRobinSelect
 )
 
-type Discover interface {
+type Discovery interface {
 	Refresh() error
 	Update(servers []string) error
 	Get(mode SelectMode) (string, error)
@@ -78,28 +76,4 @@ func NewMultiServerDiscovery(servers []string) *MultiServerDiscovery {
 	return d
 }
 
-var _ Discover = (*MultiServerDiscovery)(nil)
-
-type XClient struct {
-	d       Discover
-	mode    SelectMode
-	opt     *Option
-	mu      sync.Mutex
-	clients map[string]*Client
-}
-
-var _ io.Closer = (*XClient)(nil)
-
-func NewXClient(d Discover, mode SelectMode, opt *Option) *XClient {
-	return &XClient{d: d, mode: mode, opt: opt, clients: make(map[string]*Client)}
-}
-
-func (xc *XClient) Close() error {
-	xc.mu.Lock()
-	defer xc.mu.Unlock()
-	for key, client := range xc.clients {
-		_ = client.Close()
-		delete(xc.clients, key)
-	}
-	return nil
-}
+var _ Discovery = (*MultiServerDiscovery)(nil)
